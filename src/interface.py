@@ -73,7 +73,7 @@ if seleccion == "📅 Programación de Turnos":
             "Total Horas": st.column_config.NumberColumn("Total Horas", format="%.2f hrs", disabled=True),
         },
         hide_index=True,
-        use_container_width=True,
+        use_container_width="stretch",
         key="editor_turnos"
     )
 
