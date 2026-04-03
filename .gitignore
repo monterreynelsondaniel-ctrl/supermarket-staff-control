@@ -1,0 +1,29 @@
+# Entorno Virtual (¡Muy importante ignorar esto!)
+.venv/
+env/
+venv/
+ENV/
+
+# Base de Datos (Seguridad y Privacidad)
+data/*.db
+data/*.sqlite3
+
+# Archivos de Datos y Reportes (No subir datos reales de empleados)
+data/*.xlsx
+data/*.csv
+temp_huellero.csv
+huellero_limpio.xlsx
+reporte_discrepancias.xlsx
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.class
+
+# IDEs (VS Code, PyCharm)
+.vscode/
+.idea/
+
+# Sistema Operativo
+.DS_Store
+Thumbs.db
