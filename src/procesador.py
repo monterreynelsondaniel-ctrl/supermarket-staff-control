@@ -7,25 +7,34 @@ def calcular_diferencia_horas(entrada, salida):
         salida += timedelta(days=1)
     return (salida - entrada).total_seconds() / 3600
 
+import pandas as pd
+from datetime import datetime
+
+def calcular_diferencia_horas(inicio, fin):
+    """Auxiliar para restar datetimes y obtener float de horas."""
+    if not inicio or not fin: return 0
+    diferencia = fin - inicio
+    return diferencia.total_seconds() / 3600
+
 def procesar_marcas_huellero(df_datos):
     """
-    Toma el DataFrame crudo del CSV y devuelve un DataFrame limpio con 
-    horas calculadas por empleado y día.
+    Toma el DataFrame crudo del CSV y devuelve un DataFrame limpio.
     """
     # 1. Limpieza inicial
+    # Asegúrate que la columna del CSV se llame 'Time' y 'Attendance Status'
     df_datos['datetime'] = pd.to_datetime(df_datos['Time'], errors='coerce')
     df_datos = df_datos.dropna(subset=['datetime'])
     
-    # Limpiar el Person ID (quitar comillas y espacios)
+    # Limpiar ID: quitar comillas de los strings si vienen como "'123'"
     df_datos['Person ID'] = df_datos['Person ID'].astype(str).str.replace("'", "").str.strip()
     
-    # Ordenar cronológicamente
+    # Ordenar por persona y tiempo para que el loop tenga sentido
     df_datos = df_datos.sort_values(['Person ID', 'datetime'])
     
-    resultados = []
+    resultados_globales = []
     MAX_JORNADA_HORAS = 16
 
-    # 2. Agrupar por empleado para procesar sus marcas
+    # 2. Procesar por empleado
     for pid, grupo in df_datos.groupby('Person ID'):
         nombre_empleado = grupo['Name'].iloc[0]
         turnos_empleado = []
@@ -33,11 +42,11 @@ def procesar_marcas_huellero(df_datos):
         break_inicio = None
         
         for row in grupo.itertuples():
-            # row._5 corresponde a la columna 'Attendance Status' según tu script original
-            evento = str(row._5).strip() 
+            # Nota: Si el CSV cambia de orden, usa row.Attendance_Status o el nombre exacto
+            evento = str(getattr(row, 'Attendance Status', '')).strip() 
             tiempo = row.datetime
             
-            # --- Lógica de Descansos (Breaks) ---
+            # --- Lógica de Descansos ---
             if evento == 'Break-Out' and jornada_actual:
                 break_inicio = tiempo
                 continue
@@ -52,65 +61,58 @@ def procesar_marcas_huellero(df_datos):
                 if jornada_actual is None:
                     jornada_actual = {'entrada': tiempo, 'breaks': []}
                 else:
-                    # Si ya había una entrada sin salida, verificamos si cerramos la anterior
+                    # Caso: Marcó entrada dos veces. Cerramos la anterior automáticamente.
                     horas = calcular_diferencia_horas(jornada_actual['entrada'], tiempo)
-                    if horas >= 1: # Si pasó más de una hora, asumimos que la anterior fue salida
-                        horas_break = sum([calcular_diferencia_horas(b[0], b[1]) for b in jornada_actual['breaks']])
-                        
+                    if horas >= 1: 
                         turnos_empleado.append({
-                            'person_id': pid,
                             'nombre': nombre_empleado,
                             'fecha': jornada_actual['entrada'].date(),
                             'entrada': jornada_actual['entrada'].time(),
                             'salida': tiempo.time(),
-                            'horas_break': round(horas_break, 2),
-                            'horas_trabajadas': round(horas - horas_break, 2),
-                            'estado': 'CHECKIN_COMO_SALIDA'
+                            'horas_trabajadas': round(horas, 2),
+                            'Obs': 'CHECKIN_AUTO_CIERRE'
                         })
-                        jornada_actual = {'entrada': tiempo, 'breaks': []}
+                    jornada_actual = {'entrada': tiempo, 'breaks': []}
                 continue
                 
             # --- Lógica de Salida (Check-out) ---
             if evento == 'Check-out':
                 if jornada_actual is None:
+                    # Caso: Salida sin entrada previa
                     turnos_empleado.append({
-                        'person_id': pid, 'nombre': nombre_empleado, 'fecha': tiempo.date(),
-                        'entrada': None, 'salida': tiempo.time(), 'horas_break': 0,
-                        'horas_trabajadas': 0, 'estado': 'SOLO_SALIDA'
+                        'nombre': nombre_empleado, 'fecha': tiempo.date(),
+                        'entrada': None, 'salida': tiempo.time(),
+                        'horas_trabajadas': 0, 'Obs': 'SOLO_SALIDA'
                     })
                     continue
                 
-                # Cerrar jornada normal
                 horas_totales = calcular_diferencia_horas(jornada_actual['entrada'], tiempo)
                 horas_break = sum([calcular_diferencia_horas(b[0], b[1]) for b in jornada_actual['breaks']])
                 horas_trabajadas = round(horas_totales - horas_break, 2)
                 
-                estado = 'OK' if 0 <= horas_trabajadas <= MAX_JORNADA_HORAS else 'ERROR_JORNADA_EXTREMA'
-                
                 turnos_empleado.append({
-                    'person_id': pid,
                     'nombre': nombre_empleado,
                     'fecha': jornada_actual['entrada'].date(),
                     'entrada': jornada_actual['entrada'].time(),
                     'salida': tiempo.time(),
-                    'horas_break': round(horas_break, 2),
                     'horas_trabajadas': horas_trabajadas,
-                    'estado': estado
+                    'Obs': 'OK' if horas_trabajadas <= MAX_JORNADA_HORAS else 'JORNADA_EXTREMA'
                 })
                 jornada_actual = None
         
-        # Guardar si quedó una jornada abierta al final del archivo
+        # Guardar jornada huérfana (Entrada sin salida al final del día)
         if jornada_actual:
             turnos_empleado.append({
-                'person_id': pid, 'nombre': nombre_empleado, 'fecha': jornada_actual['entrada'].date(),
+                'nombre': nombre_empleado, 'fecha': jornada_actual['entrada'].date(),
                 'entrada': jornada_actual['entrada'].time(), 'salida': None,
-                'horas_break': 0, 'horas_trabajadas': 0, 'estado': 'SIN_SALIDA'
+                'horas_trabajadas': 0, 'Obs': 'SIN_SALIDA'
             })
             
         if turnos_empleado:
-            resultados.append(pd.DataFrame(turnos_empleado))
+            resultados_globales.extend(turnos_empleado)
 
-    if not resultados:
-        return pd.DataFrame()
+    # 3. Retorno de DataFrame Consolidado
+    if not resultados_globales:
+        return pd.DataFrame(columns=['nombre', 'fecha', 'entrada', 'salida', 'horas_trabajadas', 'Obs'])
         
-    return pd.concat(resultados, ignore_index=True)
+    return pd.DataFrame(resultados_globales)

@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from procesador import procesar_marcas_huellero
 import io
 # Corregido: Importamos la función específica que creamos
-from comparacion import ejecutar_comparacion 
+from comparacion import ejecutar_comparacion
+import logic
 
 st.set_page_config(page_title="Sistema Control de Horas", layout="wide")
 
@@ -63,7 +64,7 @@ if seleccion == "📅 Programación de Turnos":
         st.write(f"**Fin de semana:** {fecha_fin}")
 
     df_inicial, fechas = obtener_datos_completos(depto, fecha_inicio, fecha_fin)
-    st.subheader(f"Cuadrícula: {depto}")
+    st.subheader(f"Departamento: {depto}")
 
     edicion = st.data_editor(
         df_inicial,
@@ -103,7 +104,7 @@ if seleccion == "📅 Programación de Turnos":
             conn.close()
 
 elif seleccion == "📥 Cargar Huellero (CSV)":
-    st.header("Procesador de Asistencia Real y Comparativa")
+    st.header("📊 Procesador de Asistencia y Comparativa")
     
     col_f1, col_f2 = st.columns(2)
     with col_f1:
@@ -111,46 +112,84 @@ elif seleccion == "📥 Cargar Huellero (CSV)":
     with col_f2:
         f_fin_comp = st.date_input("Fecha Fin Comparación", datetime.now())
 
-    archivo = st.file_uploader("Sube el reporte del huellero", type=["csv"])
+    archivo = st.file_uploader("Sube el reporte del huellero (CSV)", type=["csv"])
     
     if archivo:
-        # Guardamos temporalmente para el procesador
-        with open("temp_huellero.csv", "wb") as f:
-            f.write(archivo.getbuffer())
+        # LEER DIRECTAMENTE DESDE LA MEMORIA (RAM)
+        df_crudo = pd.read_csv(archivo)
+        st.write("📋 Vista previa del archivo cargado:", df_crudo.head(3))
             
         if st.button("🚀 Ejecutar Cruce de Información"):
-            st.info("Paso 1: Limpiando marcas del huellero...")
-            # Aquí llamamos a tu función de procesador.py
-            # Nota: Asegúrate que procesar_marcas_huellero reciba el path o el DF
-            
-            st.info("Paso 2: Cruzando Realidad vs Programación...")
             try:
-                # Llamamos a la función del motor que creamos
-                df_comparativo = ejecutar_comparacion(str(f_inicio_comp), str(f_fin_comp))
-                
-                if df_comparativo is not None:
-                    st.success("✅ Comparación finalizada.")
-                    m1, m2 = st.columns(2)
-                    alertas_count = len(df_comparativo[df_comparativo['Alerta_44h'].str.contains("SÍ", na=False)])
-                    faltas_count = len(df_comparativo[df_comparativo['Obs'] == "FALTA / NO MARCÓ"])
+                with st.status("Procesando datos...", expanded=True) as status:
+                    # PASO 1: Limpieza con tu procesador.py
+                    st.write("🧼 Limpiando marcas del huellero...")
+                    df_asistencia_limpia = procesar_marcas_huellero(df_crudo)
                     
-                    m1.metric("Alertas > 44h", alertas_count)
-                    m2.metric("Faltas/Inconsistencias", faltas_count)
+                    # PASO 2: Cruce con SQLite y Reglas de Negocio
+                    st.write("🔍 Cruzando Realidad vs Programación...")
+                    # Modificamos la llamada para pasarle el DF limpio
+                    df_comparativo = ejecutar_comparacion(
+                        str(f_inicio_comp), 
+                        str(f_fin_comp), 
+                        df_huellero=df_asistencia_limpia
+                    )
+                    status.update(label="✅ Proceso completado", state="complete", expanded=False)
 
+                if df_comparativo is not None:
+                    # --- MÉTRICAS DE IMPACTO (Para impresionar al jefe) ---
+                    m1, m2, m3 = st.columns(3)
+                    alertas_44 = len(df_comparativo[df_comparativo['Alerta_44h'].str.contains("SÍ", na=False)])
+                    faltas = len(df_comparativo[df_comparativo['Obs'] == "FALTA / NO MARCÓ"])
+                    
+                    # Calculamos tardanzas con tu logic.py
+                    df_tardanzas = logic.analizar_puntualidad(df_comparativo)
+                    tardanzas_count = len(df_tardanzas)
+
+                    m1.metric("Excesos Jornada (>44h)", alertas_44, delta="Revisar", delta_color="inverse")
+                    m2.metric("Faltas Detectadas", faltas, delta="Inconsistencias", delta_color="off")
+                    m3.metric("Llegadas Tarde", tardanzas_count, delta="Puntualidad", delta_color="inverse")
+
+                    # --- SECCIÓN DE TARDANZAS ---
+                    if not df_tardanzas.empty:
+                        with st.expander("⚠️ Ver Detalle de Llegadas Tarde (Tolerancia 10 min)", expanded=False):
+                            st.dataframe(
+                                df_tardanzas[['nombre', 'fecha', 'entrada_prog', 'entrada_real', 'retraso_minutos']],
+                                use_container_width=True, hide_index=True
+                            )
+                            # Guardar reporte físico para auditoría
+                            os.makedirs("exports", exist_ok=True)
+                            df_tardanzas.to_excel("exports/reporte_tardanzas.xlsx", index=False)
+
+                    # --- TABLA PRINCIPAL DE DISCREPANCIAS ---
+                    st.subheader("📝 Detalle de Comparación Semanal")
+                    
                     def highlight_discrepancy(row):
                         style = [''] * len(row)
                         if "SÍ" in str(row['Alerta_44h']):
-                            style = ['background-color: #fff3e0'] * len(row)
+                            style = ['background-color: #fff3e0'] * len(row) # Naranja suave
                         if row['Obs'] == "FALTA / NO MARCÓ":
-                            style = ['color: #d32f2f; font-weight: bold'] * len(row)
+                            style = ['color: #d32f2f; font-weight: bold'] * len(row) # Rojo fuerte
                         return style
 
-                    st.dataframe(df_comparativo.style.apply(highlight_discrepancy, axis=1), use_container_width=True)
+                    st.dataframe(
+                        df_comparativo.style.apply(highlight_discrepancy, axis=1), 
+                        use_container_width=True,
+                        hide_index=True
+                    )
                     
+                    # Botón de Descarga
                     csv_final = df_comparativo.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Descargar Reporte Final", csv_final, "reporte_final.csv", "text/csv")
+                    st.download_button(
+                        label="📥 Descargar Reporte Completo (CSV)",
+                        data=csv_final,
+                        file_name=f"reporte_{f_inicio_comp}_{f_fin_comp}.csv",
+                        mime="text/csv"
+                    )
+
             except Exception as e:
-                st.error(f"Hubo un error en el cruce de datos: {e}")
+                st.error(f"❌ Error en el sistema: {e}")
+                st.exception(e) # Esto te ayuda a debuguear mientras programas
 
 elif seleccion == "📊 Reporte Horas Extras":
     st.title("📊 Reporte de Horas Extras")
