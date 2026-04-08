@@ -50,10 +50,53 @@ with st.sidebar:
     paginas = ["📅 Programación de Turnos", "📥 Cargar Huellero (CSV)", "📊 Reporte Horas Extras", "📝 Planillas"]
     seleccion = st.radio("Ir a:", paginas)
 
+    # Separador visual sutil
+    st.write("") 
+    st.write("") 
+    st.divider()
+
+    # CSS para el Pulso Moderno
+    st.markdown("""
+        <style>
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+        }
+        .container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            background: rgba(128, 128, 128, 0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(128, 128, 128, 0.1);
+        }
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background: #2ecc71;
+            border-radius: 50%;
+            animation: pulse-green 2s infinite;
+        }
+        .status-text {
+            font-family: 'Source Code Pro', monospace;
+            font-size: 0.75rem;
+            color: #888;
+            letter-spacing: 1px;
+        }
+        </style>
+        
+        <div class="container">
+            <div class="pulse-dot"></div>
+            <div class="status-text">ESTADO // ACTIVO</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 # --- 2. LÓGICA DE NAVEGACIÓN ---
 
 if seleccion == "📅 Programación de Turnos":
-    st.title("🛒 Programación de Turnos")
+    st.title(" Programación de Turnos")
     col1, col2, col3 = st.columns(3)
     with col1:
         depto = st.selectbox("Departamento", ["Caja", "Pickers", "CCTV", "Bodega", "Call Center", "Lideres", "Tesorería"])
