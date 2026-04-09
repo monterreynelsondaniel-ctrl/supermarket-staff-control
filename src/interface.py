@@ -71,6 +71,7 @@ with st.sidebar:
             background: rgba(128, 128, 128, 0.05);
             border-radius: 8px;
             border: 1px solid rgba(128, 128, 128, 0.1);
+            margin-top: 50px;
         }
         .pulse-dot {
             width: 8px;
@@ -151,88 +152,94 @@ elif seleccion == "📥 Cargar Huellero (CSV)":
     
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        f_inicio_comp = st.date_input("Fecha Inicio Comparación", datetime.now() - timedelta(days=7))
+        f_inicio_comp = st.date_input("Fecha Inicio", datetime.now() - timedelta(days=15))
     with col_f2:
-        f_fin_comp = st.date_input("Fecha Fin Comparación", datetime.now())
+        f_fin_comp = st.date_input("Fecha Fin", datetime.now())
 
     archivo = st.file_uploader("Sube el reporte del huellero (CSV)", type=["csv"])
     
     if archivo:
-        # LEER DIRECTAMENTE DESDE LA MEMORIA (RAM)
         df_crudo = pd.read_csv(archivo)
-        st.write("📋 Vista previa del archivo cargado:", df_crudo.head(3))
-            
+        
         if st.button("🚀 Ejecutar Cruce de Información"):
             try:
                 with st.status("Procesando datos...", expanded=True) as status:
-                    # PASO 1: Limpieza con tu procesador.py
-                    st.write("🧼 Limpiando marcas del huellero...")
+                    st.write("🧼 Limpiando marcas...")
                     df_asistencia_limpia = procesar_marcas_huellero(df_crudo)
                     
-                    # PASO 2: Cruce con SQLite y Reglas de Negocio
-                    st.write("🔍 Cruzando Realidad vs Programación...")
-                    # Modificamos la llamada para pasarle el DF limpio
+                    st.write("🔍 Comparando contra Turnos Asignados...")
+                    # Ahora ejecutar_comparacion devuelve el AJUSTE basado en el turno
                     df_comparativo = ejecutar_comparacion(
                         str(f_inicio_comp), 
                         str(f_fin_comp), 
                         df_huellero=df_asistencia_limpia
                     )
-                    status.update(label="✅ Proceso completado", state="complete", expanded=False)
+                    status.update(label="✅ Comparación Lista", state="complete", expanded=False)
 
                 if df_comparativo is not None:
-                    # --- MÉTRICAS DE IMPACTO (Para impresionar al jefe) ---
-                    m1, m2, m3 = st.columns(3)
-                    alertas_44 = len(df_comparativo[df_comparativo['Alerta_44h'].str.contains("SÍ", na=False)])
-                    faltas = len(df_comparativo[df_comparativo['Obs'] == "FALTA / NO MARCÓ"])
+                    # --- INTERFAZ DE EDICIÓN PARA EL AJUSTE ---
+                    st.subheader("🛠️ Revisión de Novedades y Ajustes")
+                    st.info("Aquí puedes corregir el AJUSTE manualmente antes de generar el reporte final.")
                     
-                    # Calculamos tardanzas con tu logic.py
-                    df_tardanzas = logic.analizar_puntualidad(df_comparativo)
-                    tardanzas_count = len(df_tardanzas)
-
-                    m1.metric("Excesos Jornada (>44h)", alertas_44, delta="Revisar", delta_color="inverse")
-                    m2.metric("Faltas Detectadas", faltas, delta="Inconsistencias", delta_color="off")
-                    m3.metric("Llegadas Tarde", tardanzas_count, delta="Puntualidad", delta_color="inverse")
-
-                    # --- SECCIÓN DE TARDANZAS ---
-                    if not df_tardanzas.empty:
-                        with st.expander("⚠️ Ver Detalle de Llegadas Tarde (Tolerancia 10 min)", expanded=False):
-                            st.dataframe(
-                                df_tardanzas[['nombre', 'fecha', 'entrada_prog', 'entrada_real', 'retraso_minutos']],
-                                use_container_width=True, hide_index=True
-                            )
-                            # Guardar reporte físico para auditoría
-                            os.makedirs("exports", exist_ok=True)
-                            df_tardanzas.to_excel("exports/reporte_tardanzas.xlsx", index=False)
-
-                    # --- TABLA PRINCIPAL DE DISCREPANCIAS ---
-                    st.subheader("📝 Detalle de Comparación Semanal")
-                    
-                    def highlight_discrepancy(row):
-                        style = [''] * len(row)
-                        if "SÍ" in str(row['Alerta_44h']):
-                            style = ['background-color: #fff3e0'] * len(row) # Naranja suave
-                        if row['Obs'] == "FALTA / NO MARCÓ":
-                            style = ['color: #d32f2f; font-weight: bold'] * len(row) # Rojo fuerte
-                        return style
-
-                    st.dataframe(
-                        df_comparativo.style.apply(highlight_discrepancy, axis=1), 
+                    # Mostramos las columnas clave para que tú o Carlos decidan
+                    df_editado = st.data_editor(
+                        df_comparativo,
+                        column_config={
+                            "nombre": st.column_config.Column("Empleado", disabled=True),
+                            "fecha": st.column_config.Column("Fecha", disabled=True),
+                            "turno_id": st.column_config.Column("Turno", disabled=True),
+                            "HT": st.column_config.NumberColumn("HT (Turno)", format="%.2f", disabled=True),
+                            "HORAS_REALES": st.column_config.NumberColumn("Real (Reloj)", format="%.2f", disabled=True),
+                            "AJUSTE": st.column_config.NumberColumn("AJUSTE", format="%.2f", help="Modifica este valor si hubo un error en la marca"),
+                            "Obs": st.column_config.SelectboxColumn("Obs", options=["OK", "FALTA", "VACACIONES", "CALAMIDAD", "AJUSTE MANUAL"])
+                        },
+                        hide_index=True,
                         use_container_width=True,
-                        hide_index=True
+                        key="editor_ajustes_final"
                     )
-                    
-                    # Botón de Descarga
-                    csv_final = df_comparativo.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Descargar Reporte Completo (CSV)",
-                        data=csv_final,
-                        file_name=f"reporte_{f_inicio_comp}_{f_fin_comp}.csv",
-                        mime="text/csv"
-                    )
+
+                    # --- GENERACIÓN DEL REPORTE QUINCENAL (ESTILO CARLOS) ---
+                    if st.button("📦 Generar Reporte Quincenal para Excel"):
+                        # Agrupamos por nombre para sumar la quincena
+                        reporte_carlos = df_editado.groupby('nombre').agg({
+                            'HT': 'sum',
+                            'AJUSTE': 'sum',
+                            'HED': 'sum',
+                            'RN': 'sum',
+                            'HEFD': 'sum',
+                            'T_PARTIDO': 'sum',
+                            'DESCANSOS': 'sum'
+                        }).reset_index()
+
+                        # Renombramos a tus cabeceras exactas
+                        reporte_carlos.columns = ['EMPLEADOS', 'HT', 'AJUSTE', 'HED', 'RN', 'HEFD', 'T. Partido', 'DESCANSOS']
+                        
+                        # Cálculo de SHT Completas
+                        reporte_carlos['SHT. Completas'] = reporte_carlos['HT'] + reporte_carlos['AJUSTE']
+                        
+                        # Semáforo de Estado
+                        reporte_carlos['ESTADO'] = reporte_carlos['SHT. Completas'].apply(
+                            lambda x: "✅ OK" if x <= 44 else f"🔴 Exceso: {round(x-44, 2)}h"
+                        )
+
+                        st.success("✅ Reporte consolidado con éxito.")
+                        st.dataframe(reporte_carlos, use_container_width=True, hide_index=True)
+
+                        # Exportación a Excel Real (para que Carlos solo copie y pegue)
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                            reporte_carlos.to_excel(writer, index=False, sheet_name='Hoja1')
+                        
+                        st.download_button(
+                            label="📥 Descargar Excel para Sincronizar",
+                            data=buffer,
+                            file_name=f"Reporte_Quincenal_{f_inicio_comp}.xlsx",
+                            mime="application/vnd.ms-excel"
+                        )
 
             except Exception as e:
-                st.error(f"❌ Error en el sistema: {e}")
-                st.exception(e) # Esto te ayuda a debuguear mientras programas
+                st.error(f"❌ Error en el proceso: {e}")
+                st.exception(e)
 
 elif seleccion == "📊 Reporte Horas Extras":
     st.title("📊 Reporte de Horas Extras")

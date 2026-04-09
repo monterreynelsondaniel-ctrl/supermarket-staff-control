@@ -65,6 +65,7 @@ def procesar_marcas_huellero(df_datos):
                     horas = calcular_diferencia_horas(jornada_actual['entrada'], tiempo)
                     if horas >= 1: 
                         turnos_empleado.append({
+                            'id_empleado': pid,
                             'nombre': nombre_empleado,
                             'fecha': jornada_actual['entrada'].date(),
                             'entrada': jornada_actual['entrada'].time(),
@@ -80,6 +81,7 @@ def procesar_marcas_huellero(df_datos):
                 if jornada_actual is None:
                     # Caso: Salida sin entrada previa
                     turnos_empleado.append({
+                        'id_empleado' : pid, 
                         'nombre': nombre_empleado, 'fecha': tiempo.date(),
                         'entrada': None, 'salida': tiempo.time(),
                         'horas_trabajadas': 0, 'Obs': 'SOLO_SALIDA'
@@ -91,6 +93,7 @@ def procesar_marcas_huellero(df_datos):
                 horas_trabajadas = round(horas_totales - horas_break, 2)
                 
                 turnos_empleado.append({
+                    'id_empleado': pid,
                     'nombre': nombre_empleado,
                     'fecha': jornada_actual['entrada'].date(),
                     'entrada': jornada_actual['entrada'].time(),
@@ -103,6 +106,7 @@ def procesar_marcas_huellero(df_datos):
         # Guardar jornada huérfana (Entrada sin salida al final del día)
         if jornada_actual:
             turnos_empleado.append({
+                'id_empleado': pid,
                 'nombre': nombre_empleado, 'fecha': jornada_actual['entrada'].date(),
                 'entrada': jornada_actual['entrada'].time(), 'salida': None,
                 'horas_trabajadas': 0, 'Obs': 'SIN_SALIDA'
