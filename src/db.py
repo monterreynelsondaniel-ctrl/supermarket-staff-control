@@ -100,5 +100,25 @@ def guardar_programacion(empleado_id, fecha, turno_id):
     finally:
         conn.close()
 
+def guardar_asistencia_incremental(df):
+    """Guarda o actualiza las marcas del huellero en la DB."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    for _, row in df.iterrows():
+        cursor.execute("""
+            INSERT INTO asistencia_procesada (id_empleado, fecha, entrada, salida, horas_trabajadas, obs)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id_empleado, fecha) DO UPDATE SET
+                entrada=excluded.entrada,
+                salida=excluded.salida,
+                horas_trabajadas=excluded.horas_trabajadas,
+                obs=excluded.obs
+        """, (str(row['id_empleado']), row['fecha'], str(row['entrada']), 
+              str(row['salida']), row['horas_trabajadas'], row['Obs']))
+    
+    conn.commit()
+    conn.close()
+
 if __name__ == "__main__":
     init_db()
