@@ -11,7 +11,7 @@ DATABASE_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "data", "sistema_de
 def cargar_datos_db(fecha_inicio, fecha_fin):
     """Extrae la programación con TODAS las columnas de la tabla turnos."""
     conn = sqlite3.connect(DATABASE_PATH)
-    # IMPORTANTE: Aquí traemos tus columnas HED, RN, T_PARTIDO, etc.
+    # IMPORTANTE: Aquí traemos columnas HED, RN, T_PARTIDO, etc.
     query = f"""
     SELECT 
         p.empleado_id, e.nombre, p.fecha, p.turno_id,
